@@ -37,7 +37,7 @@ Dependencies (installed automatically via PlatformIO):
 
 ## Zigbee — key decisions
 
-**Role:** Zigbee **End Device** (`ZIGBEE_MODE_ED`, `CONFIG_ZB_ZED=y`), not router.
+**Role:** Zigbee **Router** (`ZIGBEE_MODE_ZCZR`, `CONFIG_ZB_ZCZR=y`). Verified working in stock z2m; still masquerades as battery End Device at ZCL level (Aqara profile).
 
 Device **masquerades as Aqara WXKG07LM** (`lumi.remote.b286acn02`):
 - `manufacturer` = `LUMI`
@@ -67,9 +67,9 @@ Build requires custom partition table and sdkconfig:
 board_build.partitions = zigbee_zczr_4mb.csv
 board_build.sdkconfig_options =
     CONFIG_ZB_ENABLED=y
-    CONFIG_ZB_ZED=y
+    CONFIG_ZB_ZCZR=y
 build_flags =
-    -DZIGBEE_MODE_ED
+    -DZIGBEE_MODE_ZCZR
 ```
 
 ## Architecture
@@ -83,7 +83,7 @@ build_flags =
 | `button_monitor.h/cpp` | Both-button OTA trigger, factory reset, WiFi AP + web server |
 | `led_indicator.h/cpp` | Status LED: SEARCHING / CONNECTED / ERROR |
 | `settings.h/cpp` | Persistent config via `Preferences` (click timing only) |
-| `zigbee_handler.h/cpp` | Zigbee ED init, two `ZigbeeMultistate` endpoints, action reports, voltage/temp |
+| `zigbee_handler.h/cpp` | Zigbee router init, two `ZigbeeMultistate` endpoints, action reports, voltage/temp |
 | `version.h` | `FW_VERSION`, build date/time, `LOG()` / `APP_DEBUG` |
 
 ### Data flow
@@ -148,6 +148,7 @@ Serial on OTA start: `[OTA] WiFi SSID="ZbButtonAP" pass="ZbButton"`.
 
 ## Important notes
 
+- **Zigbee role is Router** — `ZIGBEE_DEFAULT_ROUTER_CONFIG()` in `zigbeeInit()`. Do not revert to ED without explicit request.
 - **All timing is non-blocking** — use `millis()` comparisons; `delay()` only in setup/reboot paths.
 - **Buttons are active-low** with internal pull-ups enabled.
 - **LED logic is inverted** — `ledIndicator.setRaw(true)` = LED on (`digitalWrite(LED_PIN, LOW)`).

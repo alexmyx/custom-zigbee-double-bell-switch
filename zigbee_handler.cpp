@@ -2,8 +2,8 @@
 #include "led_indicator.h"
 #include "version.h"
 
-#ifndef ZIGBEE_MODE_ED
-#error "Zigbee ED required: set ZIGBEE_MODE_ED and CONFIG_ZB_ZED=y in platformio.ini"
+#ifndef ZIGBEE_MODE_ZCZR
+#error "Zigbee router required: set ZIGBEE_MODE_ZCZR and CONFIG_ZB_ZCZR=y in platformio.ini"
 #endif
 
 #include "Zigbee.h"
@@ -206,8 +206,7 @@ void zigbeeInit() {
     Zigbee.setScanDuration(4);
     esp_zb_secur_network_min_join_lqi_set(0);
 
-    esp_zb_cfg_t zb_cfg = ZIGBEE_DEFAULT_ED_CONFIG();
-    zb_cfg.nwk_cfg.zed_cfg.keep_alive = 30000;
+    esp_zb_cfg_t zb_cfg = ZIGBEE_DEFAULT_ROUTER_CONFIG();
 
     Zigbee.setTimeout(2000);
 
