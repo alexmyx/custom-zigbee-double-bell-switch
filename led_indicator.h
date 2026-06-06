@@ -15,7 +15,7 @@ public:
     void setMode(LedMode mode);
     void forceRefresh();
     void update();
-    void setRaw(bool state);  // прямое управление LED без изменения режима
+    void setRaw(bool state);  // direct LED control without changing mode
 
 private:
     LedMode  _mode        = LED_SEARCHING;

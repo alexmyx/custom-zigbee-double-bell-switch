@@ -7,8 +7,8 @@
 #define FW_BUILD_DATE     __DATE__
 #define FW_BUILD_TIME     __TIME__
 
-// Отладочный вывод: подключение, heartbeat, нажатия кнопок.
-// Закомментировать APP_DEBUG перед финальной сборкой.
+// Debug output: connection, heartbeat, button presses.
+// Comment out APP_DEBUG before release builds.
 #define APP_DEBUG
 
 #ifdef APP_DEBUG

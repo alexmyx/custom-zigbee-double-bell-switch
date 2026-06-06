@@ -33,7 +33,7 @@ void LedIndicator::setRaw(bool state) {
 }
 
 void LedIndicator::_setLed(bool state) {
-    // На XIAO светодиод инвертированный
+    // XIAO onboard LED is active-low
     digitalWrite(LED_PIN, state ? LOW : HIGH);
     _ledState = state;
 }

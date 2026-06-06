@@ -20,9 +20,12 @@ void handleEvent(uint8_t idx, ButtonEvent event) {
 }
 
 void setup() {
-#ifdef APP_DEBUG
     Serial.begin(115200);
-    delay(1000);
+    delay(500);
+
+#ifdef APP_DEBUG
+    // Extra delay for debug builds only
+    delay(500);
 #endif
 
     const esp_task_wdt_config_t wdt_cfg = {
@@ -41,10 +44,11 @@ void setup() {
 
     buttonMonitor.begin(PIN_BUTTON_1, PIN_BUTTON_2);
 
-    zigbeeInit();
-
-    // WDT после Zigbee.begin() — begin() может ждать стек до 30 с
-    esp_task_wdt_add(NULL);
+    if (!buttonMonitor.bootIntoOtaIfRequested()) {
+        zigbeeInit();
+        // WDT after Zigbee.begin() - begin() may block up to ~30 s
+        esp_task_wdt_add(NULL);
+    }
 }
 
 void loop() {
@@ -61,10 +65,12 @@ void loop() {
 #endif
 
     buttonMonitor.update();
-    zigbeeLoop();
+    if (!buttonMonitor.isOtaActive()) {
+        zigbeeLoop();
+    }
     ledIndicator.update();
 
-    if (!buttonMonitor.isOtaActive()) {
+    if (!buttonMonitor.isOtaActive() && !buttonMonitor.isResetting()) {
         handleEvent(1, btn1.read());
         handleEvent(2, btn2.read());
     }

@@ -3,7 +3,7 @@
 #include "version.h"
 
 #ifndef ZIGBEE_MODE_ED
-#error "Нужен Zigbee ED: ZIGBEE_MODE_ED и CONFIG_ZB_ZED=y в platformio.ini"
+#error "Zigbee ED required: set ZIGBEE_MODE_ED and CONFIG_ZB_ZED=y in platformio.ini"
 #endif
 
 #include "Zigbee.h"
@@ -18,13 +18,15 @@
 #define BATTERY_PERCENT        100
 #define BATTERY_VOLTAGE        30    // 3.0 V (100 mV units), genPowerCfg EP1
 #define LUMI_MANUF_CODE        0x115F  // LUMI United Technology, stock z2m lumi_basic
-#define LUMI_BASIC_ATTR_FF01   0xFF01  // Aqara: TLV blob → lumi_basic, tag 1 = voltage mV
+#define LUMI_BASIC_ATTR_FF01   0xFF01  // Aqara: TLV blob → lumi_basic, tag 1 = voltage mV, tag 3 = device temp °C
+#define LUMI_FF01_TLV_LEN      7       // voltage (5) + device_temperature (3)
 #define POST_JOIN_VOLTAGE_MS   10000
 #define VOLTAGE_ON_BTN_MS      (60UL * 1000UL)
 
 static int16_t _cachedLqi = -1;
+static uint8_t lumi_ff01[1 + LUMI_FF01_TLV_LEN];
 
-// Device ID как у WXKG07LM (24321 / 24322)
+// Device IDs match WXKG07LM (0x5F01 / 0x5F02)
 class AqaraButtonEP : public ZigbeeMultistate {
 public:
     AqaraButtonEP(uint8_t endpoint, uint16_t device_id)
@@ -33,8 +35,8 @@ public:
         _ep_config.app_device_id = device_id;
     }
 
-    // Aqara lumi_basic: genBasic 0xFF01 = TLV [1, 0x21, mV lo, mV hi] → voltage + battery в stock z2m
-    bool addLumiVoltageAttribute() {
+    // Aqara lumi_basic: genBasic 0xFF01 = TLV [1,0x21,mV] + [3,0x28,temp°C] → voltage, battery, device_temperature
+    bool addLumiBasicAttribute() {
         if (_endpoint != EP_BUTTON_1) {
             return true;
         }
@@ -43,8 +45,14 @@ public:
         if (!basic) {
             return false;
         }
-        // ZCL char string: len + Lumi TLV (tag 1, type 0x21, 3000 mV LE)
-        static uint8_t lumi_ff01[] = {4, 0x01, 0x21, 0xB8, 0x0B};
+        lumi_ff01[0] = LUMI_FF01_TLV_LEN;
+        lumi_ff01[1] = 0x01;
+        lumi_ff01[2] = 0x21;
+        lumi_ff01[3] = 0xB8;
+        lumi_ff01[4] = 0x0B;  // 3000 mV
+        lumi_ff01[5] = 0x03;
+        lumi_ff01[6] = 0x28;
+        lumi_ff01[7] = 25;    // placeholder until first read
         uint8_t access = ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY | ESP_ZB_ZCL_ATTR_ACCESS_REPORTING;
         esp_err_t ret = esp_zb_cluster_add_manufacturer_attr(
             basic, ESP_ZB_ZCL_CLUSTER_ID_BASIC, LUMI_BASIC_ATTR_FF01, LUMI_MANUF_CODE,
@@ -65,6 +73,38 @@ static bool _voltageSentOnJoin = false;
 
 static bool _isJoined();
 
+static int8_t _readDeviceTempC() {
+    float t = temperatureRead();
+    if (isnan(t)) {
+        return 25;
+    }
+    if (t < -40.0f) {
+        t = -40.0f;
+    } else if (t > 125.0f) {
+        t = 125.0f;
+    }
+    return (int8_t)lroundf(t);
+}
+
+static void _updateLumiFf01() {
+    lumi_ff01[0] = LUMI_FF01_TLV_LEN;
+    lumi_ff01[1] = 0x01;
+    lumi_ff01[2] = 0x21;
+    lumi_ff01[3] = 0xB8;
+    lumi_ff01[4] = 0x0B;
+    lumi_ff01[5] = 0x03;
+    lumi_ff01[6] = 0x28;
+    lumi_ff01[7] = (uint8_t)_readDeviceTempC();
+
+    if (!esp_zb_lock_acquire(portMAX_DELAY)) {
+        return;
+    }
+    esp_zb_zcl_set_manufacturer_attribute_val(
+        EP_BUTTON_1, ESP_ZB_ZCL_CLUSTER_ID_BASIC, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
+        LUMI_MANUF_CODE, LUMI_BASIC_ATTR_FF01, lumi_ff01, false);
+    esp_zb_lock_release();
+}
+
 extern "C" void zigbeeSteeringKick(uint8_t param) {
     (void)param;
     if (esp_zb_bdb_is_factory_new() && !_isJoined()) {
@@ -83,7 +123,7 @@ static void _startFindingBinding() {
     esp_zb_bdb_finding_binding_start_target(EP_BUTTON_2, 240);
 }
 
-// Рабочий путь для кнопок: прямой report координатору 0x0000 (genMultistateInput).
+// Button reports: direct report to coordinator 0x0000 (genMultistateInput).
 static bool _reportToCoordinator(uint8_t endpoint, uint16_t cluster_id, uint16_t attr_id,
                                  uint16_t manuf_code = ESP_ZB_ZCL_ATTR_NON_MANUFACTURER_SPECIFIC) {
     const bool manuf = (manuf_code != ESP_ZB_ZCL_ATTR_NON_MANUFACTURER_SPECIFIC);
@@ -116,19 +156,20 @@ static bool _reportPresentValue(uint8_t endpoint, ZigbeeMultistate& btn) {
     return btn.reportMultistateInput();
 }
 
-// Stock z2m b286acn02: lumi_basic tag 1 → voltage (mV), meta.voltageToPercentage → battery 100%
-static void _reportLumiVoltage() {
+// Stock z2m lumi_basic: tag 1 → voltage/battery, tag 3 → device_temperature
+static void _reportLumiBasic() {
+    _updateLumiFf01();
     _reportToCoordinator(EP_BUTTON_1, ESP_ZB_ZCL_CLUSTER_ID_BASIC,
                          LUMI_BASIC_ATTR_FF01, LUMI_MANUF_CODE);
 }
 
-static void _maybeReportVoltage() {
+static void _maybeReportLumiBasic() {
     uint32_t now = millis();
     if (_lastVoltageReport != 0 && ((now - _lastVoltageReport) < VOLTAGE_ON_BTN_MS)) {
         return;
     }
     _lastVoltageReport = now;
-    _reportLumiVoltage();
+    _reportLumiBasic();
 }
 
 int16_t zigbeeGetLinkQuality() {
@@ -148,10 +189,12 @@ int16_t zigbeeGetLinkQuality() {
 void zigbeeInit() {
     zbButton1.addMultistateInput();
     zbButton2.addMultistateInput();
-    zbButton1.addLumiVoltageAttribute();
+    zbButton1.setMultistateInputStates(4);  // single/double/triple/hold (Aqara WXKG07LM)
+    zbButton2.setMultistateInputStates(4);
+    zbButton1.addLumiBasicAttribute();
 
     zbButton1.setPowerSource(ZB_POWER_SOURCE_BATTERY, BATTERY_PERCENT, BATTERY_VOLTAGE);
-    // genPowerCfg EP1 + lumi 0xFF01 — как у Aqara WXKG07LM
+    // genPowerCfg EP1 + lumi 0xFF01 - same as Aqara WXKG07LM
 
     zbButton1.setManufacturerAndModel("LUMI", "lumi.remote.b286acn02");
     zbButton2.setManufacturerAndModel("LUMI", "lumi.remote.b286acn02");
@@ -185,20 +228,20 @@ void zigbeeLoop() {
         _connectedAt = millis();
         _voltageSentOnJoin = false;
         _startFindingBinding();
-        LOG("[Zigbee] Подключено\n");
+        LOG("[Zigbee] Connected\n");
         ledIndicator.setMode(LED_CONNECTED);
     } else if (!now_connected && _connected) {
         _connected = false;
         _bindingStarted = false;
         _voltageSentOnJoin = false;
-        LOG("[Zigbee] Отключено\n");
+        LOG("[Zigbee] Disconnected\n");
         ledIndicator.setMode(LED_SEARCHING);
     }
 
     if (now_connected && !_voltageSentOnJoin && ((millis() - _connectedAt) >= POST_JOIN_VOLTAGE_MS)) {
         _voltageSentOnJoin = true;
         _lastVoltageReport = millis();
-        _reportLumiVoltage();
+        _reportLumiBasic();
     }
 
     if (now_connected) {
@@ -236,7 +279,7 @@ void zigbeeSendAction(uint8_t buttonIndex, ButtonEvent event) {
     if (!_reportPresentValue(ep, btn)) {
         return;
     }
-    _maybeReportVoltage();
+    _maybeReportLumiBasic();
 }
 
 bool zigbeeIsConnected() {

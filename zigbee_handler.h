@@ -5,7 +5,7 @@
 #define EP_BUTTON_1   1
 #define EP_BUTTON_2   2
 
-// Значения present_value (genMultistateInput), совместимые с WXKG07LM:
+// present_value values (genMultistateInput), compatible with WXKG07LM:
 //   0   — hold
 //   1   — single
 //   2   — double
@@ -16,4 +16,4 @@ void zigbeeInit();
 void zigbeeLoop();
 void zigbeeSendAction(uint8_t buttonIndex, ButtonEvent event);
 bool zigbeeIsConnected();
-int16_t zigbeeGetLinkQuality();  // 0–255 или -1 если нет родителя
+int16_t zigbeeGetLinkQuality();  // 0-255, or -1 if no parent

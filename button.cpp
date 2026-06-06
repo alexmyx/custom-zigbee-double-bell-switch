@@ -11,7 +11,7 @@ ButtonEvent Button::read() {
     uint16_t tripleClickMs = settings.tripleClickMs;
     uint16_t longPressMs   = settings.longPressMs;
 
-    // Нажатие
+    // Press
     if (currentState && !isPressed) {
         if ((now - lastPressTime) > DEBOUNCE_MS) {
             isPressed      = true;
@@ -20,7 +20,7 @@ ButtonEvent Button::read() {
         }
     }
 
-    // Удержание
+    // Hold
     if (currentState && isPressed && !longPressFired) {
         if ((now - pressStartTime) >= longPressMs) {
             longPressFired = true;
@@ -30,7 +30,7 @@ ButtonEvent Button::read() {
         }
     }
 
-    // Отпускание
+    // Release
     if (!currentState && isPressed) {
         isPressed     = false;
         lastPressTime = now;
@@ -40,8 +40,8 @@ ButtonEvent Button::read() {
         }
     }
 
-    // Таймаут: после 1 нажатия ждём doubleClickMs,
-    //          после 2+ — tripleClickMs
+    // Click timeout: after 1 click wait doubleClickMs,
+    //                after 2+ clicks wait tripleClickMs
     if (waitingSecond && !isPressed) {
         uint16_t timeout = (clickCount >= 2) ? tripleClickMs : doubleClickMs;
         if ((now - lastPressTime) > timeout) {
