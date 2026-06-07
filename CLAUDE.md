@@ -52,6 +52,7 @@ Cluster: **genMultistateInput (0x0012)**, attribute `present_value` (0x0055):
 | 2 | double | `double_left` | `double_right` |
 | 3 | triple | `triple_left` | `triple_right` |
 | 0 | hold | `hold_left` | `hold_right` |
+| 255 | release (after hold) | `release_left` | `release_right` |
 
 Endpoint 1 -> button 1 (left), endpoint 2 -> button 2 (right).
 
@@ -104,7 +105,8 @@ Zigbee connection state -> LedIndicator (SEARCHING blink 500 ms / CONNECTED puls
 | Single click | timeout `doubleClickMs` (default 400 ms) after release |
 | Double click | 2 clicks within `doubleClickMs` window |
 | Triple click | 3 clicks, timeout `tripleClickMs` (default 400 ms) after 2nd release |
-| Long press | held >= `longPressMs` (default 800 ms) |
+| Long press | held >= `longPressMs` (default 800 ms) → `present_value=0` |
+| Release after hold | button up after long press → `present_value=255` |
 
 ### OTA / web interface
 

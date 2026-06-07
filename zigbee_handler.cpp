@@ -262,12 +262,13 @@ void zigbeeSendAction(uint8_t buttonIndex, ButtonEvent event) {
         case BTN_SINGLE: value = 1; name = "single"; break;
         case BTN_DOUBLE: value = 2; name = "double"; break;
         case BTN_TRIPLE: value = 3; name = "triple"; break;
-        case BTN_LONG:   value = 0; name = "hold";   break;
+        case BTN_LONG:    value = 0;   name = "hold";    break;
+        case BTN_RELEASE: value = 255; name = "release"; break;
         default: return;
     }
 
     uint8_t ep = (buttonIndex == 1) ? EP_BUTTON_1 : EP_BUTTON_2;
-    LOG("[Zigbee] EP%d → %s (%u), lqi=%d\n", ep, name, value, (int)zigbeeGetLinkQuality());
+    LOG("[Zigbee] EP%d -> %s (%u), lqi=%d\n", ep, name, value, (int)zigbeeGetLinkQuality());
 
     ZigbeeMultistate& btn = (buttonIndex == 1)
         ? static_cast<ZigbeeMultistate&>(zbButton1)

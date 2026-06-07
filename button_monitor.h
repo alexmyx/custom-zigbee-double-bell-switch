@@ -14,37 +14,37 @@
 
 class ButtonMonitor {
 public:
-  void begin(uint8_t pin1, uint8_t pin2);
-  void update();
+    void begin(uint8_t pin1, uint8_t pin2);
+    void update();
 
-  // true -> skip Zigbee init; WiFi AP already running
-  bool bootIntoOtaIfRequested();
-  void clearOtaBootFlag();
-  void rebootToZigbeeMode();
+    // true -> skip Zigbee init; WiFi AP already running
+    bool bootIntoOtaIfRequested();
+    void clearOtaBootFlag();
+    void rebootToZigbeeMode();
 
-  bool isOtaActive();
-  bool isResetting();
+    bool isOtaActive();
+    bool isResetting();
 
 private:
-  uint8_t  _pin1;
-  uint8_t  _pin2;
+    uint8_t  _pin1;
+    uint8_t  _pin2;
 
-  bool     _bothHeld       = false;
-  uint32_t _bothHoldStart  = 0;
-  bool     _otaWarnShown   = false;
-  bool     _rstWarnShown   = false;
-  bool     _bothBlinkState = false;
-  uint32_t _bothLastBlink  = 0;
+    bool     _bothHeld       = false;
+    uint32_t _bothHoldStart  = 0;
+    bool     _otaWarnShown   = false;
+    bool     _rstWarnShown   = false;
+    bool     _bothBlinkState = false;
+    uint32_t _bothLastBlink  = 0;
 
-  bool     _otaActive     = false;
-  uint32_t _otaStartTime  = 0;
+    bool     _otaActive     = false;
+    uint32_t _otaStartTime  = 0;
 
-  void _checkBothHold();
-  void _startOtaAp();
-  void _stopOta();
-  void _requestOtaReboot();
-  void _doReset();
-  void _fastBlink(bool& state, uint32_t& lastBlink);
+    void _checkBothHold();
+    void _startOtaAp();
+    void _stopOta();
+    void _requestOtaReboot();
+    void _doReset();
+    void _fastBlink(bool& state, uint32_t& lastBlink);
 };
 
 extern ButtonMonitor buttonMonitor;

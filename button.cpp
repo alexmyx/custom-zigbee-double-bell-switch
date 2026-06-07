@@ -1,6 +1,5 @@
 #include "button.h"
 #include "settings.h"
-#include "version.h"
 
 ButtonEvent Button::read() {
     bool     currentState  = (digitalRead(pin) == LOW);
@@ -34,7 +33,10 @@ ButtonEvent Button::read() {
     if (!currentState && isPressed) {
         isPressed     = false;
         lastPressTime = now;
-        if (!longPressFired) {
+        if (longPressFired) {
+            longPressFired = false;
+            event          = BTN_RELEASE;
+        } else {
             if (clickCount < 3) clickCount++;
             waitingSecond = true;
         }

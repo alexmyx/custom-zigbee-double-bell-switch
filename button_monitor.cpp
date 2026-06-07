@@ -152,305 +152,302 @@ static const char PAGE_END[] PROGMEM =
 "</script></body></html>";
 
 static String buildPage() {
-  String page;
-  page.reserve(4096);
-  page += FPSTR(PAGE_HEAD);
+    String page;
+    page.reserve(4096);
+    page += FPSTR(PAGE_HEAD);
 
-  page += "Device: <b>";
-  page += OTA_WIFI_SSID;
-  page += "</b><br>Firmware: <b>";
-  page += FW_VERSION_STR;
-  page += "</b><br>Built: <b>";
-  page += FW_BUILD_DATE;
-  page += " ";
-  page += FW_BUILD_TIME;
-  page += "</b>";
+    page += "Device: <b>";
+    page += OTA_WIFI_SSID;
+    page += "</b><br>Firmware: <b>";
+    page += FW_VERSION_STR;
+    page += "</b><br>Built: <b>";
+    page += FW_BUILD_DATE;
+    page += " ";
+    page += FW_BUILD_TIME;
+    page += "</b>";
 
-  page += FPSTR(PAGE_BODY);
-  page += settings.doubleClickMs;
-  page += FPSTR(PAGE_TRIPLE);
-  page += settings.tripleClickMs;
-  page += FPSTR(PAGE_LONG);
-  page += settings.longPressMs;
-  page += FPSTR(PAGE_END);
-  return page;
+    page += FPSTR(PAGE_BODY);
+    page += settings.doubleClickMs;
+    page += FPSTR(PAGE_TRIPLE);
+    page += settings.tripleClickMs;
+    page += FPSTR(PAGE_LONG);
+    page += settings.longPressMs;
+    page += FPSTR(PAGE_END);
+    return page;
 }
 
 // ── HTTP handlers ────────────────────────────────────────────────
 
 static void handleRoot() {
-  server.send(200, "text/html; charset=utf-8", buildPage());
+    server.send(200, "text/html; charset=utf-8", buildPage());
 }
 
 static void handleSettings() {
-  if (!server.hasArg("plain")) {
-    server.send(400, "text/plain", "No data");
-    return;
-  }
+    if (!server.hasArg("plain")) {
+        server.send(400, "text/plain", "No data");
+        return;
+    }
 
-  StaticJsonDocument<384> doc;
-  if (deserializeJson(doc, server.arg("plain"))) {
-    server.send(400, "text/plain", "Invalid JSON");
-    return;
-  }
+    StaticJsonDocument<384> doc;
+    if (deserializeJson(doc, server.arg("plain"))) {
+        server.send(400, "text/plain", "Invalid JSON");
+        return;
+    }
 
-  if (doc.containsKey("dbl")) {
-    uint16_t v = doc["dbl"];
-    if (v >= 200 && v <= 1000) settings.doubleClickMs = v;
-  }
+    if (doc.containsKey("dbl")) {
+        settings.setDoubleClickMs(doc["dbl"]);
+    }
 
-  if (doc.containsKey("tpl")) {
-    uint16_t v = doc["tpl"];
-    if (v >= 200 && v <= 1500) settings.tripleClickMs = v;
-  }
+    if (doc.containsKey("tpl")) {
+        settings.setTripleClickMs(doc["tpl"]);
+    }
 
-  if (doc.containsKey("lng")) {
-    uint16_t v = doc["lng"];
-    if (v >= 500 && v <= 3000) settings.longPressMs = v;
-  }
+    if (doc.containsKey("lng")) {
+        settings.setLongPressMs(doc["lng"]);
+    }
 
-  settings.save();
-  server.send(200, "text/plain", "OK");
+    settings.save();
+    server.send(200, "text/plain", "OK");
 }
 
 static void handleRebootZigbee() {
-  server.send(200, "text/plain", "OK");
-  delay(100);
-  buttonMonitor.rebootToZigbeeMode();
+    server.send(200, "text/plain", "OK");
+    delay(100);
+    buttonMonitor.rebootToZigbeeMode();
 }
 
 static void handleUpdateDone() {
-  bool ok = !Update.hasError();
-  server.send(ok ? 200 : 500, "text/plain", ok ? "OK" : Update.errorString());
-  if (ok) {
-    buttonMonitor.clearOtaBootFlag();
-    delay(300);
-    ESP.restart();
-  }
+    bool ok = !Update.hasError();
+    server.send(ok ? 200 : 500, "text/plain", ok ? "OK" : Update.errorString());
+    if (ok) {
+        buttonMonitor.clearOtaBootFlag();
+        delay(300);
+        ESP.restart();
+    }
 }
 
 static void handleUpdateUpload() {
-  HTTPUpload& upload = server.upload();
+    HTTPUpload& upload = server.upload();
 
-  if (upload.status == UPLOAD_FILE_START) {
-    LOG("[OTA] Upload start: %s\n", upload.filename.c_str());
-    if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
-      Update.printError(Serial);
+    if (upload.status == UPLOAD_FILE_START) {
+        LOG("[OTA] Upload start: %s\n", upload.filename.c_str());
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+            Update.printError(Serial);
+        }
     }
-  }
 
-  else if (upload.status == UPLOAD_FILE_WRITE) {
-    esp_task_wdt_reset();
-    if (Update.write(upload.buf, upload.currentSize)
-        != upload.currentSize) {
-      Update.printError(Serial);
+    else if (upload.status == UPLOAD_FILE_WRITE) {
+        esp_task_wdt_reset();
+        if (Update.write(upload.buf, upload.currentSize)
+                != upload.currentSize) {
+            Update.printError(Serial);
+        }
+        LOG("[OTA] %d%%\n",
+            (int)(Update.progress() * 100 / Update.size()));
     }
-    LOG("[OTA] %d%%\n",
-      (int)(Update.progress() * 100 / Update.size()));
-  }
 
-  else if (upload.status == UPLOAD_FILE_END) {
-    if (Update.end(true)) {
-      LOG("[OTA] Success: %u bytes\n", upload.totalSize);
-    } else {
-      Update.printError(Serial);
-      ledIndicator.setMode(LED_ERROR);
+    else if (upload.status == UPLOAD_FILE_END) {
+        if (Update.end(true)) {
+            LOG("[OTA] Success: %u bytes\n", upload.totalSize);
+        } else {
+            Update.printError(Serial);
+            ledIndicator.setMode(LED_ERROR);
+        }
     }
-  }
 }
 
 // ── Fast blink ───────────────────────────────────────────────────
 void ButtonMonitor::_fastBlink(
-    bool& state, uint32_t& lastBlink) {
-  uint32_t now = millis();
-  if ((now - lastBlink) >= BLINK_FAST_MS) {
-    lastBlink = now;
-    state     = !state;
-    ledIndicator.setRaw(state);
-  }
+        bool& state, uint32_t& lastBlink) {
+    uint32_t now = millis();
+    if ((now - lastBlink) >= BLINK_FAST_MS) {
+        lastBlink = now;
+        state     = !state;
+        ledIndicator.setRaw(state);
+    }
 }
 
 // ── OTA ──────────────────────────────────────────────────────────
 void ButtonMonitor::clearOtaBootFlag() {
-  _otaPrefs.begin("zigbee_btn", false);
-  _otaPrefs.putBool(OTA_BOOT_KEY, false);
+    _otaPrefs.begin("zigbee_btn", false);
+    _otaPrefs.putBool(OTA_BOOT_KEY, false);
 }
 
 void ButtonMonitor::rebootToZigbeeMode() {
-  LOG("[OTA] Reboot to Zigbee mode\n");
-  clearOtaBootFlag();
-  delay(100);
-  ESP.restart();
-}
-
-bool ButtonMonitor::bootIntoOtaIfRequested() {
-  _otaPrefs.begin("zigbee_btn", false);
-  if (!_otaPrefs.getBool(OTA_BOOT_KEY, false)) {
-    return false;
-  }
-  LOG("[OTA] Firmware mode (Zigbee off)\n");
-  // WDT before _startOtaAp: setup() has not called add() yet for OTA path
-  esp_task_wdt_add(NULL);
-  _startOtaAp();
-  return true;
-}
-
-void ButtonMonitor::_requestOtaReboot() {
-  LOG("[OTA] Rebooting to WiFi mode...\n");
-  _otaPrefs.begin("zigbee_btn", false);
-  _otaPrefs.putBool(OTA_BOOT_KEY, true);
-  delay(100);
-  ESP.restart();
-}
-
-void ButtonMonitor::_startOtaAp() {
-  esp_task_wdt_reset();
-
-  IPAddress ip(192, 168, 0, 100);
-  WiFi.persistent(false);
-  WiFi.mode(WIFI_AP);
-  WiFi.softAPConfig(ip, ip, IPAddress(255, 255, 255, 0));
-
-  if (!WiFi.softAP(OTA_WIFI_SSID, OTA_WIFI_PASSWORD, 6, 0, 4)) {
-    LOG("[OTA] softAP fail\n");
+    LOG("[OTA] Reboot to Zigbee mode\n");
     clearOtaBootFlag();
     delay(100);
     ESP.restart();
-    return;
-  }
-  delay(300);
+}
 
-  Serial.printf("[OTA] WiFi SSID=\"%s\" pass=\"%s\"\n",
-                OTA_WIFI_SSID, OTA_WIFI_PASSWORD);
-  LOG("[OTA] http://192.168.0.100\n");
+bool ButtonMonitor::bootIntoOtaIfRequested() {
+    _otaPrefs.begin("zigbee_btn", false);
+    if (!_otaPrefs.getBool(OTA_BOOT_KEY, false)) {
+        return false;
+    }
+    LOG("[OTA] Firmware mode (Zigbee off)\n");
+    // WDT before _startOtaAp: setup() has not called add() yet for OTA path
+    esp_task_wdt_add(NULL);
+    _startOtaAp();
+    return true;
+}
 
-  server.on("/",             HTTP_GET,  handleRoot);
-  server.on("/settings",     HTTP_POST, handleSettings);
-  server.on("/reboot-zigbee", HTTP_POST, handleRebootZigbee);
-  server.on("/update",         HTTP_POST,
-    handleUpdateDone, handleUpdateUpload);
+void ButtonMonitor::_requestOtaReboot() {
+    LOG("[OTA] Rebooting to WiFi mode...\n");
+    _otaPrefs.begin("zigbee_btn", false);
+    _otaPrefs.putBool(OTA_BOOT_KEY, true);
+    delay(100);
+    ESP.restart();
+}
 
-  server.begin();
+void ButtonMonitor::_startOtaAp() {
+    esp_task_wdt_reset();
 
-  _otaActive    = true;
-  _otaStartTime = millis();
-  LOG("[OTA] Web server started\n");
+    IPAddress ip(192, 168, 0, 100);
+    WiFi.persistent(false);
+    WiFi.mode(WIFI_AP);
+    WiFi.softAPConfig(ip, ip, IPAddress(255, 255, 255, 0));
+
+    if (!WiFi.softAP(OTA_WIFI_SSID, OTA_WIFI_PASSWORD, 6, 0, 4)) {
+        LOG("[OTA] softAP fail\n");
+        clearOtaBootFlag();
+        delay(100);
+        ESP.restart();
+        return;
+    }
+    delay(300);
+
+    Serial.printf("[OTA] WiFi SSID=\"%s\" pass=\"%s\"\n",
+                                OTA_WIFI_SSID, OTA_WIFI_PASSWORD);
+    LOG("[OTA] http://192.168.0.100\n");
+
+    server.on("/",             HTTP_GET,  handleRoot);
+    server.on("/settings",     HTTP_POST, handleSettings);
+    server.on("/reboot-zigbee", HTTP_POST, handleRebootZigbee);
+    server.on("/update",         HTTP_POST,
+        handleUpdateDone, handleUpdateUpload);
+
+    server.begin();
+
+    _otaActive    = true;
+    _otaStartTime = millis();
+    LOG("[OTA] Web server started\n");
 }
 
 void ButtonMonitor::_stopOta() {
-  server.stop();
-  WiFi.softAPdisconnect(true);
-  WiFi.mode(WIFI_OFF);
-  clearOtaBootFlag();
-  _otaActive = false;
-  LOG("[OTA] Exit, rebooting...\n");
-  delay(100);
-  ESP.restart();
+    server.stop();
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_OFF);
+    clearOtaBootFlag();
+    _otaActive = false;
+    LOG("[OTA] Exit, rebooting...\n");
+    delay(100);
+    ESP.restart();
 }
 
 void ButtonMonitor::_checkBothHold() {
-  bool p1 = (digitalRead(_pin1) == LOW);
-  bool p2 = (digitalRead(_pin2) == LOW);
-  bool both = p1 && p2;
-  uint32_t now = millis();
+    bool p1 = (digitalRead(_pin1) == LOW);
+    bool p2 = (digitalRead(_pin2) == LOW);
+    bool both = p1 && p2;
+    uint32_t now = millis();
 
-  if (_otaActive) {
-    server.handleClient();
-    if ((now - _otaStartTime) >= 300000UL) {
-      LOG("[OTA] Session timeout\n");
-      _stopOta();
+    if (_otaActive) {
+        server.handleClient();
+        if ((now - _otaStartTime) >= 300000UL) {
+            LOG("[OTA] Session timeout\n");
+            _stopOta();
+        }
     }
-  }
 
-  if (both && !_bothHeld) {
-    _bothHeld      = true;
-    _bothHoldStart = now;
-    _otaWarnShown  = false;
-    _rstWarnShown  = false;
-    LOG("[OTA/RESET] Both buttons held\n");
-  }
+    if (both && !_bothHeld) {
+        _bothHeld      = true;
+        _bothHoldStart = now;
+        _otaWarnShown  = false;
+        _rstWarnShown  = false;
+        LOG("[OTA/RESET] Both buttons held\n");
+    }
 
-  if (!both && _bothHeld) {
+    if (!both && _bothHeld) {
+        uint32_t held = now - _bothHoldStart;
+        _bothHeld     = false;
+        _otaWarnShown = false;
+        _rstWarnShown = false;
+        ledIndicator.forceRefresh();
+        if (held >= OTA_HOLD_MS && held < RESET_HOLD_MS) {
+            _requestOtaReboot();
+        }
+        return;
+    }
+
+    if (!both) {
+        return;
+    }
+
     uint32_t held = now - _bothHoldStart;
-    _bothHeld     = false;
-    _otaWarnShown = false;
-    _rstWarnShown = false;
-    ledIndicator.forceRefresh();
-    if (held >= OTA_HOLD_MS && held < RESET_HOLD_MS) {
-      _requestOtaReboot();
+
+    if (held >= RESET_HOLD_MS) {
+        _bothHeld = false;
+        _doReset();
+        return;
     }
-    return;
-  }
 
-  if (!both) {
-    return;
-  }
-
-  uint32_t held = now - _bothHoldStart;
-
-  if (held >= RESET_HOLD_MS) {
-    _bothHeld = false;
-    _doReset();
-    return;
-  }
-
-  if (held >= RESET_WARNING_MS) {
-    if (!_rstWarnShown) {
-      _rstWarnShown = true;
-      LOG("[RESET] 3 seconds left...\n");
+    if (held >= RESET_WARNING_MS) {
+        if (!_rstWarnShown) {
+            _rstWarnShown = true;
+            LOG("[RESET] 3 seconds left...\n");
+        }
+        _fastBlink(_bothBlinkState, _bothLastBlink);
+        return;
     }
-    _fastBlink(_bothBlinkState, _bothLastBlink);
-    return;
-  }
 
-  if (held >= OTA_WARNING_MS) {
-    if (!_otaWarnShown) {
-      _otaWarnShown = true;
-      LOG("[OTA] 2 seconds left...\n");
+    if (held >= OTA_WARNING_MS) {
+        if (!_otaWarnShown) {
+            _otaWarnShown = true;
+            LOG("[OTA] 2 seconds left...\n");
+        }
+        _fastBlink(_bothBlinkState, _bothLastBlink);
     }
-    _fastBlink(_bothBlinkState, _bothLastBlink);
-  }
 }
 
 // ── Reset ─────────────────────────────────────────────────────────
 void ButtonMonitor::_doReset() {
-  LOG("[RESET] Factory reset (Zigbee + settings)\n");
+    LOG("[RESET] Factory reset (Zigbee + settings)\n");
 
-  // Disable watchdog for intentional blocking delays
-  esp_task_wdt_delete(NULL);
+    // Disable watchdog for intentional blocking delays
+    esp_task_wdt_delete(NULL);
 
-  ledIndicator.setRaw(true);
-  delay(1000);
-  ledIndicator.setRaw(false);
-  delay(300);
+    ledIndicator.setRaw(true);
+    delay(1000);
+    ledIndicator.setRaw(false);
+    delay(300);
 
-  for (int i = 0; i < 3; i++) {
-    ledIndicator.setRaw(true);  delay(100);
-    ledIndicator.setRaw(false); delay(100);
-  }
+    for (int i = 0; i < 3; i++) {
+        ledIndicator.setRaw(true);  delay(100);
+        ledIndicator.setRaw(false); delay(100);
+    }
 
-  delay(300);
-  settings.reset();
-  settings.save();
-  Zigbee.factoryReset();
-  delay(300);
-  ESP.restart();
+    delay(300);
+    settings.reset();
+    settings.save();
+    Zigbee.factoryReset();
+    delay(300);
+    ESP.restart();
 }
 
 // ── Public API ───────────────────────────────────────────────────
 void ButtonMonitor::begin(uint8_t pin1, uint8_t pin2) {
-  _pin1 = pin1;
-  _pin2 = pin2;
+    _pin1 = pin1;
+    _pin2 = pin2;
 }
 
 void ButtonMonitor::update() {
-  _checkBothHold();
+    _checkBothHold();
 }
 
 bool ButtonMonitor::isOtaActive() {
-  return _otaActive;
+    return _otaActive;
 }
 
 bool ButtonMonitor::isResetting() {
-  return _bothHeld;
+    return _bothHeld;
 }
