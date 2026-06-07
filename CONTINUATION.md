@@ -22,7 +22,7 @@ Dual-button Zigbee router on **Seeed XIAO ESP32C6**. Migrated from **Aqara WXKG0
 | Manufacturer code | Provisional **`0x1378`** (CSA official code needed before z2m PR) |
 | Zigbee role | **Router** (`ZIGBEE_MODE_ZCZR`, `CONFIG_ZB_ZCZR=y`) |
 | Endpoints | EP1 = button 1 + config + temp; EP2 = button 2; **no EP3 / no `*_both`** |
-| Button cluster | `genMultistateInput` (0x0012), `present_value`: 0=hold, 1=single, 2=double, 3=triple |
+| Button cluster | `genMultistateInput` (0x0012), `present_value`: 0=hold, 1=single, 2=double, 3=triple, 255=release |
 | z2m action names | `single_button_1`, `double_button_2`, `hold_button_1`, etc. (not Aqara `*_left`) |
 | Timing config | **Zigbee only** (cluster `0xFC01` on EP1); **removed from OTA web** |
 | OTA web | Firmware upload only; exit = successful flash or 5 min timeout |

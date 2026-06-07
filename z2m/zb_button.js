@@ -11,7 +11,7 @@ const fzLocal = {
         cluster: 'genMultistateInput',
         type: ['attributeReport', 'readResponse'],
         convert: (model, msg, publish, options, meta) => {
-            const lookup = {0: 'hold', 1: 'single', 2: 'double', 3: 'triple'};
+            const lookup = {0: 'hold', 1: 'single', 2: 'double', 3: 'triple', 255: 'release'};
             const action = lookup[msg.data.presentValue];
             if (!action) return;
 
@@ -37,8 +37,8 @@ const definition = {
     fromZigbee: [fzLocal.multistate_action],
     exposes: [
         e.action([
-            'single_button_1', 'double_button_1', 'triple_button_1', 'hold_button_1',
-            'single_button_2', 'double_button_2', 'triple_button_2', 'hold_button_2',
+            'single_button_1', 'double_button_1', 'triple_button_1', 'hold_button_1', 'release_button_1',
+            'single_button_2', 'double_button_2', 'triple_button_2', 'hold_button_2', 'release_button_2',
         ]),
     ],
     extend: [

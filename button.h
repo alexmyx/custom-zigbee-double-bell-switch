@@ -8,7 +8,8 @@ enum ButtonEvent {
     BTN_SINGLE,
     BTN_DOUBLE,
     BTN_TRIPLE,
-    BTN_LONG
+    BTN_LONG,
+    BTN_RELEASE
   };
 
 struct Button {

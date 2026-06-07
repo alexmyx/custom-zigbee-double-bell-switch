@@ -301,7 +301,8 @@ void zigbeeSendAction(uint8_t buttonIndex, ButtonEvent event) {
         case BTN_SINGLE: value = 1; break;
         case BTN_DOUBLE: value = 2; break;
         case BTN_TRIPLE: value = 3; break;
-        case BTN_LONG:   value = 0; break;
+        case BTN_LONG:    value = 0;   break;
+        case BTN_RELEASE: value = 255; break;
         default: return;
     }
 
@@ -309,10 +310,11 @@ void zigbeeSendAction(uint8_t buttonIndex, ButtonEvent event) {
 #ifdef APP_DEBUG
     const char* name = "";
     switch (event) {
-        case BTN_SINGLE: name = "single"; break;
-        case BTN_DOUBLE: name = "double"; break;
-        case BTN_TRIPLE: name = "triple"; break;
-        case BTN_LONG:   name = "hold";   break;
+        case BTN_SINGLE:  name = "single";  break;
+        case BTN_DOUBLE:  name = "double";  break;
+        case BTN_TRIPLE:  name = "triple";  break;
+        case BTN_LONG:    name = "hold";    break;
+        case BTN_RELEASE: name = "release"; break;
         default: break;
     }
     LOG("[Zigbee] EP%d -> %s (%u), lqi=%d\n", ep, name, value,

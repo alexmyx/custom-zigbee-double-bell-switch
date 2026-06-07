@@ -50,6 +50,7 @@ Dependencies (installed automatically via PlatformIO):
 | 2 | double | `double_button_1` | `double_button_2` |
 | 3 | triple | `triple_button_1` | `triple_button_2` |
 | 0 | hold | `hold_button_1` | `hold_button_2` |
+| 255 | release (after hold) | `release_button_1` | `release_button_2` |
 
 Reports: `setMultistateInput()` + direct `_reportToCoordinator()` to coordinator `0x0000`.
 

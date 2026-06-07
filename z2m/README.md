@@ -29,8 +29,8 @@ Before opening a PR to [zigbee-herdsman-converters](https://github.com/Koenkk/zi
 
 ## Actions (MQTT)
 
-- `single_button_1`, `double_button_1`, `triple_button_1`, `hold_button_1`
-- `single_button_2`, `double_button_2`, `triple_button_2`, `hold_button_2`
+- `single_button_1`, `double_button_1`, `triple_button_1`, `hold_button_1`, `release_button_1`
+- `single_button_2`, `double_button_2`, `triple_button_2`, `hold_button_2`, `release_button_2`
 
 ## Configuration (Zigbee Write Attribute)
 

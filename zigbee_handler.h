@@ -6,10 +6,11 @@
 #define EP_BUTTON_2   2
 
 // genMultistateInput present_value:
-//   0 — hold
-//   1 — single
-//   2 — double
-//   3 — triple
+//   0   — hold
+//   1   — single
+//   2   — double
+//   3   — triple
+//   255 — release (after hold)
 
 void zigbeeInit();
 void zigbeeLoop();
