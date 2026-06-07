@@ -5,12 +5,11 @@
 #define EP_BUTTON_1   1
 #define EP_BUTTON_2   2
 
-// present_value values (genMultistateInput), compatible with WXKG07LM:
-//   0   — hold
-//   1   — single
-//   2   — double
-//   3   — triple
-//   255 — release
+// genMultistateInput present_value:
+//   0 — hold
+//   1 — single
+//   2 — double
+//   3 — triple
 
 void zigbeeInit();
 void zigbeeLoop();

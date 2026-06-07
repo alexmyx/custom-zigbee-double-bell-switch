@@ -20,7 +20,6 @@ public:
   // true -> skip Zigbee init; WiFi AP already running
   bool bootIntoOtaIfRequested();
   void clearOtaBootFlag();
-  void rebootToZigbeeMode();
 
   bool isOtaActive();
   bool isResetting();

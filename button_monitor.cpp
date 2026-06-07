@@ -5,7 +5,6 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <Update.h>
-#include <ArduinoJson.h>
 #include <Preferences.h>
 #include <esp_task_wdt.h>
 #include "Zigbee.h"
@@ -16,9 +15,6 @@ static WebServer server(80);
 static Preferences _otaPrefs;
 static const char* OTA_BOOT_KEY = "ota_boot";
 
-// ── HTML ─────────────────────────────────────────────────────────
-
-// Static HTML in PROGMEM
 static const char PAGE_HEAD[] PROGMEM =
 "<!DOCTYPE html><html><head>"
 "<meta charset=UTF-8>"
@@ -35,16 +31,11 @@ static const char PAGE_HEAD[] PROGMEM =
 ".info b{color:#333}"
 ".main{background:#fff;border-radius:8px;padding:16px;"
 "box-shadow:0 2px 4px rgba(0,0,0,.1)}"
-".main h3{font-size:14px;color:#333;margin:12px 0 4px}"
-".main h3:first-child{margin-top:0}"
-"label{display:block;font-size:12px;color:#666;margin:10px 0 3px}"
-"input[type=number],input[type=file]{"
-"width:100%;padding:8px;border:1px solid #ddd;"
-"border-radius:4px;font-size:13px}"
-"input:focus{outline:none;border-color:#4CAF50}"
+".main h3{font-size:14px;color:#333;margin:0 0 8px}"
+"input[type=file]{width:100%;padding:8px;border:1px solid #ddd;"
+"border-radius:4px;font-size:13px;margin-bottom:8px}"
 ".btn{width:100%;padding:10px;background:#4CAF50;color:#fff;"
-"border:none;border-radius:4px;cursor:pointer;"
-"font-size:14px;margin-top:12px}"
+"border:none;border-radius:4px;cursor:pointer;font-size:14px;margin-top:8px}"
 ".btn:hover{background:#45a049}"
 ".btn:disabled{background:#aaa;cursor:default}"
 ".bar-bg{background:#eee;border-radius:4px;margin-top:10px}"
@@ -55,47 +46,23 @@ static const char PAGE_HEAD[] PROGMEM =
 ".warn{background:#fff8e1;border-left:3px solid #ffc107;"
 "padding:8px 10px;border-radius:4px;"
 "font-size:12px;color:#555;margin-bottom:10px}"
-".ok{display:none;background:#e8f5e9;"
-"border-left:3px solid #4CAF50;padding:8px 10px;"
-"border-radius:4px;font-size:12px;color:#2e7d32;margin-top:10px}"
-".hint{font-size:11px;color:#999;margin-top:2px}"
-"hr{border:none;border-top:1px solid #eee;margin:12px 0}"
+".note{font-size:12px;color:#666;margin-top:12px;line-height:1.4}"
 ".timer{font-size:11px;color:#999;margin-top:12px;text-align:center}"
 "</style></head><body><div class=wrap>"
 "<h2>Zigbee Button</h2>"
 "<div class=info>";
 
-static const char PAGE_BODY[] PROGMEM =
+static const char PAGE_TAIL[] PROGMEM =
 "</div>"
 "<div class=main>"
 "<div class=warn>Do not close this page while uploading</div>"
 "<h3>Firmware update</h3>"
-"<label>Firmware file (.bin):</label>"
 "<input type=file id=fw accept=.bin>"
 "<button class=btn id=btn-upd onclick='upd()'>Upload firmware</button>"
 "<div id=progress><div class=bar-bg><div id=bar></div></div>"
 "<div id=status></div></div>"
-"<hr>"
-"<h3>Button timing</h3>"
-"<label>Double click (ms):</label>"
-"<input type=number id=cd min=200 max=1000 step=50 value='";
-
-static const char PAGE_TRIPLE[] PROGMEM =
-"'><div class=hint>Suggested: 300-500</div>"
-"<label>Triple click (ms):</label>"
-"<input type=number id=ct min=200 max=1500 step=50 value='";
-
-static const char PAGE_LONG[] PROGMEM =
-"'><div class=hint>Suggested: 300-600</div>"
-"<label>Long press (ms):</label>"
-"<input type=number id=cl min=500 max=3000 step=100 value='";
-
-static const char PAGE_END[] PROGMEM =
-"'><div class=hint>Suggested: 600-1200</div>"
-"<button class=btn onclick='save()'>Save timing</button>"
-"<div class=ok id=ok>Saved</div>"
-"<button class=btn id=btn-zb style='display:none' onclick='rebootZb()'>"
-"Reboot in Zigbee mode</button>"
+"<p class=note>Button timing is configured via Zigbee only "
+"(double_click_ms, triple_click_ms, long_press_ms in z2m).</p>"
 "<div class=timer>Session expires in <span id=tmr>5:00</span></div>"
 "</div>"
 "<script>"
@@ -130,32 +97,12 @@ static const char PAGE_END[] PROGMEM =
 "document.getElementById('btn-upd').disabled=false;};"
 "x.open('POST','/update');x.send(fd);"
 "}"
-"function save(){"
-"var d={"
-"dbl:parseInt(document.getElementById('cd').value,10),"
-"tpl:parseInt(document.getElementById('ct').value,10),"
-"lng:parseInt(document.getElementById('cl').value,10)};"
-"fetch('/settings',{method:'POST',"
-"headers:{'Content-Type':'application/json'},"
-"body:JSON.stringify(d)})"
-".then(function(r){return r.text();})"
-".then(function(t){"
-"if(t==='OK'){var o=document.getElementById('ok');"
-"o.style.display='block';"
-"document.getElementById('btn-zb').style.display='block';"
-"}else{alert('Error: '+t);}});"
-"}"
-"function rebootZb(){"
-"document.getElementById('btn-zb').disabled=true;"
-"fetch('/reboot-zigbee',{method:'POST'});"
-"}"
 "</script></body></html>";
 
 static String buildPage() {
   String page;
-  page.reserve(4096);
+  page.reserve(2048);
   page += FPSTR(PAGE_HEAD);
-
   page += "Device: <b>";
   page += OTA_WIFI_SSID;
   page += "</b><br>Firmware: <b>";
@@ -165,58 +112,12 @@ static String buildPage() {
   page += " ";
   page += FW_BUILD_TIME;
   page += "</b>";
-
-  page += FPSTR(PAGE_BODY);
-  page += settings.doubleClickMs;
-  page += FPSTR(PAGE_TRIPLE);
-  page += settings.tripleClickMs;
-  page += FPSTR(PAGE_LONG);
-  page += settings.longPressMs;
-  page += FPSTR(PAGE_END);
+  page += FPSTR(PAGE_TAIL);
   return page;
 }
 
-// ── HTTP handlers ────────────────────────────────────────────────
-
 static void handleRoot() {
   server.send(200, "text/html; charset=utf-8", buildPage());
-}
-
-static void handleSettings() {
-  if (!server.hasArg("plain")) {
-    server.send(400, "text/plain", "No data");
-    return;
-  }
-
-  StaticJsonDocument<384> doc;
-  if (deserializeJson(doc, server.arg("plain"))) {
-    server.send(400, "text/plain", "Invalid JSON");
-    return;
-  }
-
-  if (doc.containsKey("dbl")) {
-    uint16_t v = doc["dbl"];
-    if (v >= 200 && v <= 1000) settings.doubleClickMs = v;
-  }
-
-  if (doc.containsKey("tpl")) {
-    uint16_t v = doc["tpl"];
-    if (v >= 200 && v <= 1500) settings.tripleClickMs = v;
-  }
-
-  if (doc.containsKey("lng")) {
-    uint16_t v = doc["lng"];
-    if (v >= 500 && v <= 3000) settings.longPressMs = v;
-  }
-
-  settings.save();
-  server.send(200, "text/plain", "OK");
-}
-
-static void handleRebootZigbee() {
-  server.send(200, "text/plain", "OK");
-  delay(100);
-  buttonMonitor.rebootToZigbeeMode();
 }
 
 static void handleUpdateDone() {
@@ -259,7 +160,6 @@ static void handleUpdateUpload() {
   }
 }
 
-// ── Fast blink ───────────────────────────────────────────────────
 void ButtonMonitor::_fastBlink(
     bool& state, uint32_t& lastBlink) {
   uint32_t now = millis();
@@ -270,17 +170,9 @@ void ButtonMonitor::_fastBlink(
   }
 }
 
-// ── OTA ──────────────────────────────────────────────────────────
 void ButtonMonitor::clearOtaBootFlag() {
   _otaPrefs.begin("zigbee_btn", false);
   _otaPrefs.putBool(OTA_BOOT_KEY, false);
-}
-
-void ButtonMonitor::rebootToZigbeeMode() {
-  LOG("[OTA] Reboot to Zigbee mode\n");
-  clearOtaBootFlag();
-  delay(100);
-  ESP.restart();
 }
 
 bool ButtonMonitor::bootIntoOtaIfRequested() {
@@ -289,7 +181,6 @@ bool ButtonMonitor::bootIntoOtaIfRequested() {
     return false;
   }
   LOG("[OTA] Firmware mode (Zigbee off)\n");
-  // WDT before _startOtaAp: setup() has not called add() yet for OTA path
   esp_task_wdt_add(NULL);
   _startOtaAp();
   return true;
@@ -324,12 +215,8 @@ void ButtonMonitor::_startOtaAp() {
                 OTA_WIFI_SSID, OTA_WIFI_PASSWORD);
   LOG("[OTA] http://192.168.0.100\n");
 
-  server.on("/",             HTTP_GET,  handleRoot);
-  server.on("/settings",     HTTP_POST, handleSettings);
-  server.on("/reboot-zigbee", HTTP_POST, handleRebootZigbee);
-  server.on("/update",         HTTP_POST,
-    handleUpdateDone, handleUpdateUpload);
-
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/update", HTTP_POST, handleUpdateDone, handleUpdateUpload);
   server.begin();
 
   _otaActive    = true;
@@ -412,11 +299,9 @@ void ButtonMonitor::_checkBothHold() {
   }
 }
 
-// ── Reset ─────────────────────────────────────────────────────────
 void ButtonMonitor::_doReset() {
   LOG("[RESET] Factory reset (Zigbee + settings)\n");
 
-  // Disable watchdog for intentional blocking delays
   esp_task_wdt_delete(NULL);
 
   ledIndicator.setRaw(true);
@@ -437,7 +322,6 @@ void ButtonMonitor::_doReset() {
   ESP.restart();
 }
 
-// ── Public API ───────────────────────────────────────────────────
 void ButtonMonitor::begin(uint8_t pin1, uint8_t pin2) {
   _pin1 = pin1;
   _pin2 = pin2;
