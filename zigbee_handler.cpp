@@ -10,8 +10,8 @@
 
 #include "Zigbee.h"
 #include "esp_zigbee_core.h"
-#include "bdb/esp_zigbee_bdb_commissioning.h"
 #include "esp_zigbee_secur.h"
+#include "bdb/esp_zigbee_bdb_commissioning.h"
 #include "nwk/esp_zigbee_nwk.h"
 #include "esp_zigbee_attribute.h"
 #include "esp_zigbee_cluster.h"
@@ -19,22 +19,20 @@
 #include "zcl/esp_zigbee_zcl_multistate_input.h"
 #include "zcl/esp_zigbee_zcl_device_temp_config.h"
 
-#define POST_JOIN_REPORT_MS    10000
-#define TEMP_REPORT_INTERVAL   (5UL * 60UL * 1000UL)
+#define POST_JOIN_REPORT_MS       12000
+#define CONFIG_REPORT_RETRY_MS    25000
+#define TEMP_REPORT_INTERVAL      (5UL * 60UL * 1000UL)
 
 static int16_t _deviceTempC = 25;
 
 static bool _connected = false;
 static uint32_t _connectedAt = 0;
 static uint32_t _lastTempReport = 0;
+static uint32_t _lastConfigOnBtn = 0;
 static bool _tempSentOnJoin = false;
+static bool _configReportedRetry = false;
 
-#ifdef APP_DEBUG
 static int16_t _cachedLqi = -1;
-static uint32_t _lastSteeringKick = 0;
-#endif
-
-static bool _isJoined();
 
 static int16_t _readChipTempC() {
     float t = temperatureRead();
@@ -61,14 +59,17 @@ static const ConfigAttrDef _configAttrs[] = {
     {ZB_ATTR_LONG_PRESS_MS,   &Settings::longPressMs,   Settings::clampLongPress},
 };
 
+static void _reportBtnConfig();
+
 class ZbButtonEP1 : public ZigbeeMultistate {
 public:
     explicit ZbButtonEP1(uint8_t endpoint) : ZigbeeMultistate(endpoint) {}
 
-    bool addButtonConfigCluster() {
-        esp_zb_attribute_list_t *attr_list =
-            esp_zb_zcl_attr_list_create(ZB_CLUSTER_BTN_CONFIG);
-        if (!attr_list) {
+    bool addButtonConfigAttrs() {
+        esp_zb_attribute_list_t *basic = esp_zb_cluster_list_get_cluster(
+            _cluster_list, ESP_ZB_ZCL_CLUSTER_ID_BASIC,
+            ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
+        if (!basic) {
             return false;
         }
 
@@ -78,17 +79,14 @@ public:
         for (const ConfigAttrDef& def : _configAttrs) {
             uint16_t *value = &(settings.*(def.field));
             esp_err_t ret = esp_zb_cluster_add_manufacturer_attr(
-                attr_list, ZB_CLUSTER_BTN_CONFIG, def.attr_id,
+                basic, ESP_ZB_ZCL_CLUSTER_ID_BASIC, def.attr_id,
                 ZB_MANUF_CODE_ALEXMYX, ESP_ZB_ZCL_ATTR_TYPE_U16, access,
                 value);
             if (ret != ESP_OK) {
                 return false;
             }
         }
-
-        return esp_zb_cluster_list_add_custom_cluster(
-                   _cluster_list, attr_list, ESP_ZB_ZCL_CLUSTER_SERVER_ROLE)
-               == ESP_OK;
+        return true;
     }
 
     bool addDeviceTempCluster() {
@@ -107,7 +105,7 @@ public:
     }
 
     void zbAttributeSet(const esp_zb_zcl_set_attr_value_message_t *message) override {
-        if (message->info.cluster != ZB_CLUSTER_BTN_CONFIG
+        if (message->info.cluster != ESP_ZB_ZCL_CLUSTER_ID_BASIC
             || message->attribute.data.type != ESP_ZB_ZCL_ATTR_TYPE_U16
             || !message->attribute.data.value) {
             return;
@@ -117,11 +115,11 @@ public:
             if (message->attribute.id != def.attr_id) {
                 continue;
             }
-            settings.*(def.field) = def.clamp(settings.*(def.field));
+            uint16_t raw = *(const uint16_t *)message->attribute.data.value;
+            settings.*(def.field) = def.clamp(raw);
             settings.save();
-            LOG("[Zigbee] Timing via ZCL: dbl=%u tpl=%u lng=%u\n",
-                settings.doubleClickMs, settings.tripleClickMs,
-                settings.longPressMs);
+            LOG("[Zigbee] Timing via ZCL attr 0x%04x = %u\n",
+                def.attr_id, settings.*(def.field));
             return;
         }
     }
@@ -130,21 +128,9 @@ public:
 static ZbButtonEP1 zbButton1(EP_BUTTON_1);
 static ZigbeeMultistate zbButton2(EP_BUTTON_2);
 
-static bool _isJoined() {
-    return esp_zb_bdb_dev_joined() && Zigbee.connected();
-}
-
-#ifdef APP_DEBUG
-extern "C" void zigbeeSteeringKick(uint8_t param) {
-    (void)param;
-    if (esp_zb_bdb_is_factory_new() && !_isJoined()) {
-        esp_zb_bdb_start_top_level_commissioning(ESP_ZB_BDB_MODE_NETWORK_STEERING);
-    }
-}
-#endif
-
 static bool _reportToCoordinator(uint8_t endpoint, uint16_t cluster_id,
-                                 uint16_t attr_id) {
+                                 uint16_t attr_id,
+                                 uint16_t manuf_code = 0) {
     esp_zb_zcl_report_attr_cmd_t cmd = {};
     cmd.zcl_basic_cmd.src_endpoint = endpoint;
     cmd.zcl_basic_cmd.dst_endpoint = 1;
@@ -154,6 +140,10 @@ static bool _reportToCoordinator(uint8_t endpoint, uint16_t cluster_id,
     cmd.direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_CLI;
     cmd.dis_default_resp = 1;
     cmd.attributeID = attr_id;
+    if (manuf_code != 0) {
+        cmd.manuf_specific = 1;
+        cmd.manuf_code = manuf_code;
+    }
 
     if (!esp_zb_lock_acquire(portMAX_DELAY)) {
         return false;
@@ -161,6 +151,33 @@ static bool _reportToCoordinator(uint8_t endpoint, uint16_t cluster_id,
     esp_err_t ret = esp_zb_zcl_report_attr_cmd_req(&cmd);
     esp_zb_lock_release();
     return ret == ESP_OK;
+}
+
+static void _syncBtnConfigAttrs() {
+    if (!esp_zb_lock_acquire(portMAX_DELAY)) {
+        return;
+    }
+    for (const ConfigAttrDef& def : _configAttrs) {
+        uint16_t val = settings.*(def.field);
+        esp_zb_zcl_set_manufacturer_attribute_val(
+            EP_BUTTON_1, ESP_ZB_ZCL_CLUSTER_ID_BASIC,
+            ESP_ZB_ZCL_CLUSTER_SERVER_ROLE, ZB_MANUF_CODE_ALEXMYX,
+            def.attr_id, &val, false);
+    }
+    esp_zb_lock_release();
+}
+
+static void _reportBtnConfig() {
+    _syncBtnConfigAttrs();
+    for (const ConfigAttrDef& def : _configAttrs) {
+        bool ok = _reportToCoordinator(
+            EP_BUTTON_1, ESP_ZB_ZCL_CLUSTER_ID_BASIC, def.attr_id,
+            ZB_MANUF_CODE_ALEXMYX);
+#ifdef APP_DEBUG
+        LOG("[Zigbee] config report attr 0x%04x %s\n", def.attr_id,
+            ok ? "ok" : "fail");
+#endif
+    }
 }
 
 static bool _reportPresentValue(uint8_t endpoint, ZigbeeMultistate& btn) {
@@ -202,22 +219,50 @@ static void _maybeReportDeviceTemp() {
     _reportDeviceTemp();
 }
 
-int16_t zigbeeGetLinkQuality() {
 #ifdef APP_DEBUG
-    if (!_isJoined()) return _cachedLqi;
+bool zigbeeDbgFactoryNew() {
+    return esp_zb_bdb_is_factory_new();
+}
+#endif
+
+int16_t zigbeeGetLinkQuality() {
+    if (!Zigbee.connected()) return _cachedLqi;
+
+    if (!esp_zb_lock_acquire(portMAX_DELAY)) {
+        return _cachedLqi;
+    }
 
     esp_zb_nwk_info_iterator_t it = ESP_ZB_NWK_INFO_ITERATOR_INIT;
     esp_zb_nwk_neighbor_info_t nbr = {};
+    int16_t best = -1;
+    int16_t coord = -1;
+    int16_t parent = -1;
+
     while (esp_zb_nwk_get_next_neighbor(&it, &nbr) == ESP_OK) {
+        int16_t lqi = (int16_t)(uint8_t)nbr.lqi;
+        if (nbr.short_addr == 0x0000) {
+            coord = lqi;
+        }
         if (nbr.relationship == ESP_ZB_NWK_RELATIONSHIP_PARENT) {
-            _cachedLqi = (int16_t)(uint8_t)nbr.lqi;
-            return _cachedLqi;
+            parent = lqi;
+        }
+        if (lqi > best) {
+            best = lqi;
         }
     }
+
+    esp_zb_lock_release();
+
+    int16_t result = parent;
+    if (coord >= 0) {
+        result = coord;  // router: coordinator is rarely marked PARENT
+    } else if (result < 0) {
+        result = best;
+    }
+    if (result >= 0) {
+        _cachedLqi = result;
+    }
     return _cachedLqi;
-#else
-    return -1;
-#endif
 }
 
 void zigbeeInit() {
@@ -230,8 +275,8 @@ void zigbeeInit() {
     zbButton1.setManufacturerAndModel(ZB_VENDOR_NAME, ZB_MODEL_NAME);
     zbButton2.setManufacturerAndModel(ZB_VENDOR_NAME, ZB_MODEL_NAME);
 
-    if (!zbButton1.addButtonConfigCluster()) {
-        LOG("[Zigbee] WARN: config cluster init failed\n");
+    if (!zbButton1.addButtonConfigAttrs()) {
+        LOG("[Zigbee] WARN: timing attrs init failed\n");
     }
     if (!zbButton1.addDeviceTempCluster()) {
         LOG("[Zigbee] WARN: device temp cluster init failed\n");
@@ -246,53 +291,75 @@ void zigbeeInit() {
 
     esp_zb_cfg_t zb_cfg = ZIGBEE_DEFAULT_ROUTER_CONFIG();
     Zigbee.setTimeout(2000);
-    Zigbee.begin(&zb_cfg);
+    if (!Zigbee.begin(&zb_cfg)) {
+        LOG("[Zigbee] begin failed, rebooting\n");
+        delay(1000);
+        ESP.restart();
+    }
+    LOG("[Zigbee] Init %s / %s (factory_new=%d)\n",
+        ZB_VENDOR_NAME, ZB_MODEL_NAME, (int)esp_zb_bdb_is_factory_new());
 }
 
 void zigbeeLoop() {
-    bool now_connected = _isJoined();
+    bool now_connected = Zigbee.connected();
 
-#ifdef APP_DEBUG
-    if (esp_zb_bdb_is_factory_new() && !now_connected && Zigbee.started()
-        && (_lastSteeringKick == 0) && (millis() >= 60000)) {
-        _lastSteeringKick = millis();
-        esp_zb_scheduler_alarm((esp_zb_callback_t)zigbeeSteeringKick, 0, 0);
+    if (!now_connected && esp_zb_bdb_is_factory_new()) {
+        static uint32_t _lastJoinHint = 0;
+        uint32_t now = millis();
+        if (_lastJoinHint == 0 || (now - _lastJoinHint) >= 30000) {
+            _lastJoinHint = now;
+            LOG("[Zigbee] Not joined — permit join ON in z2m, remove old entries, then erase flash\n");
+        }
+    } else if (!now_connected && !esp_zb_bdb_is_factory_new()) {
+        static uint32_t _lastOrphanHint = 0;
+        uint32_t now = millis();
+        if (_lastOrphanHint == 0 || (now - _lastOrphanHint) >= 15000) {
+            _lastOrphanHint = now;
+            LOG("[Zigbee] Partial join — z2m may send Leave/reset; delete device in z2m, erase flash, re-pair\n");
+        }
     }
-#endif
 
     if (now_connected && !_connected) {
         _connected = true;
         _connectedAt = millis();
         _tempSentOnJoin = false;
+        _configReportedRetry = false;
         LOG("[Zigbee] Connected\n");
         ledIndicator.setMode(LED_CONNECTED);
     } else if (!now_connected && _connected) {
         _connected = false;
         _tempSentOnJoin = false;
+        _configReportedRetry = false;
         LOG("[Zigbee] Disconnected\n");
         ledIndicator.setMode(LED_SEARCHING);
+    }
+
+    if (now_connected && !_configReportedRetry
+        && ((millis() - _connectedAt) >= CONFIG_REPORT_RETRY_MS)) {
+        _configReportedRetry = true;
+        _reportBtnConfig();
     }
 
     if (now_connected && !_tempSentOnJoin
         && ((millis() - _connectedAt) >= POST_JOIN_REPORT_MS)) {
         _tempSentOnJoin = true;
         _lastTempReport = millis();
+        _syncBtnConfigAttrs();
         _reportDeviceTemp();
+        _reportBtnConfig();
     }
 
     if (now_connected && _tempSentOnJoin) {
-#ifdef APP_DEBUG
-        int16_t lqi = zigbeeGetLinkQuality();
-        if (lqi >= 0) {
-            _cachedLqi = lqi;
-        }
-#endif
         _maybeReportDeviceTemp();
+    }
+
+    if (now_connected) {
+        zigbeeGetLinkQuality();
     }
 }
 
 void zigbeeSendAction(uint8_t buttonIndex, ButtonEvent event) {
-    if (!_isJoined()) {
+    if (!Zigbee.connected()) {
         return;
     }
 
@@ -328,6 +395,13 @@ void zigbeeSendAction(uint8_t buttonIndex, ButtonEvent event) {
         return;
     }
     _reportPresentValue(ep, btn);
+
+    uint32_t now = millis();
+    if (_lastConfigOnBtn == 0
+        || ((now - _lastConfigOnBtn) >= TEMP_REPORT_INTERVAL)) {
+        _lastConfigOnBtn = now;
+        _reportBtnConfig();
+    }
 }
 
 bool zigbeeIsConnected() {

@@ -249,6 +249,10 @@ void ButtonMonitor::_checkBothHold() {
     }
   }
 
+  if (both && !_otaActive && (now < JOIN_GRACE_MS)) {
+    return;
+  }
+
   if (both && !_bothHeld) {
     _bothHeld      = true;
     _bothHoldStart = now;

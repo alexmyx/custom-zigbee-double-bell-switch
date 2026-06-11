@@ -1,6 +1,31 @@
 # Zigbee2MQTT external converter
 
-Copy `zb_button.js` to the Zigbee2MQTT `external_converters` folder (next to `configuration.yaml`), then restart Zigbee2MQTT.
+## Install (Zigbee2MQTT 2.11+)
+
+Per [External converters](https://www.zigbee2mqtt.io/advanced/more/external_converters.html):
+
+1. Copy **`zb_button.mjs`** into **`external_converters/`** next to `configuration.yaml`.
+2. Delete `zb_button.js`, `zb_button.js.invalid` if present — deploy **only** the `.mjs` file.
+3. In `configuration.yaml`:
+
+```yaml
+advanced:
+  enable_external_js: true
+```
+
+4. Remove legacy `external_converters:` list from `configuration.yaml` (z2m 2.x auto-loads the folder).
+5. Restart Zigbee2MQTT — no `Failed to load external converter` in the log.
+6. Reconfigure or re-pair the device.
+
+Converter layout:
+
+- **Buttons** — classic `fromZigbee` on `genMultistateInput`
+- **Timing** — manufacturer UINT16 on `genBasic` (`deviceAddCustomCluster` + `0x1378` / `0x0000–0x0002`)
+- **Temperature** — `deviceTemperature()` modern extend only
+
+### If z2m renames the file to `.invalid`
+
+Load failed — use `.mjs` with `export default`, enable `enable_external_js`, check z2m log for the exact error.
 
 ## Device identity
 
@@ -24,7 +49,7 @@ Before opening a PR to [zigbee-herdsman-converters](https://github.com/Koenkk/zi
 | Cluster | Endpoint | Purpose |
 |---------|----------|---------|
 | `genMultistateInput` | 1, 2 | Button actions (`present_value`) |
-| `manuSpecificAlexmyxBtnConfig` (`0xFC01`) | 1 | Timing configuration |
+| `genBasic` (manuf `0x1378`, attrs `0x0000–0x0002`) | 1 | Timing configuration |
 | `genDeviceTempConfig` | 1 | Chip temperature |
 
 ## Actions (MQTT)

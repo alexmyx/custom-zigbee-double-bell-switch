@@ -58,8 +58,12 @@ void loop() {
     static uint32_t _lastAlive = 0;
     if ((millis() - _lastAlive) >= 3000) {
         _lastAlive = millis();
-        Serial.printf("[ALIVE] uptime=%lus joined=%d lqi=%d\n",
-            millis() / 1000, (int)zigbeeIsConnected(), (int)zigbeeGetLinkQuality());
+        Serial.printf(
+            "[ALIVE] uptime=%lus joined=%d fn=%d lqi=%d\n",
+            millis() / 1000,
+            (int)zigbeeIsConnected(),
+            (int)zigbeeDbgFactoryNew(),
+            (int)zigbeeGetLinkQuality());
     }
 
 #endif

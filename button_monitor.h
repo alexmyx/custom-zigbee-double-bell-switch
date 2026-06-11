@@ -7,6 +7,8 @@
 #define OTA_WARNING_MS     3000
 #define RESET_HOLD_MS      10000
 #define RESET_WARNING_MS   7000
+// Ignore OTA/reset gestures while Zigbee stack is joining (avoids accidental 10 s reset)
+#define JOIN_GRACE_MS      60000
 
 #define BLINK_FAST_MS      150
 #define OTA_WIFI_SSID      "ZbButtonAP"

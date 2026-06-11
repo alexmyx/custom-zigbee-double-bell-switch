@@ -17,3 +17,7 @@ void zigbeeLoop();
 void zigbeeSendAction(uint8_t buttonIndex, ButtonEvent event);
 bool zigbeeIsConnected();
 int16_t zigbeeGetLinkQuality();  // 0-255, or -1 if no parent
+
+#ifdef APP_DEBUG
+bool zigbeeDbgFactoryNew();
+#endif
