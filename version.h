@@ -7,6 +7,10 @@
 #define FW_BUILD_DATE     __DATE__
 #define FW_BUILD_TIME     __TIME__
 
+// XIAO ESP32C6: route RF to u.fl (GPIO3/14). Connect antenna first — do not
+// enable with an empty u.fl port. Comment out to use the built-in PCB antenna.
+#define USE_EXTERNAL_ANTENNA
+
 // Debug output: connection, heartbeat, button presses.
 // Comment out APP_DEBUG before release builds.
 #define APP_DEBUG
