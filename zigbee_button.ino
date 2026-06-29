@@ -11,6 +11,19 @@
 #define PIN_BUTTON_2  D1  // GPIO 1
 #define WDT_TIMEOUT   10
 
+// XIAO ESP32C6 internal RF switch (not routed to D-pads)
+#define RF_SWITCH_EN_PIN   3   // LOW = switch powered
+#define RF_ANT_SELECT_PIN  14  // HIGH = external u.fl, LOW = built-in
+
+static void _initExternalAntenna() {
+    pinMode(RF_SWITCH_EN_PIN, OUTPUT);
+    digitalWrite(RF_SWITCH_EN_PIN, LOW);
+    delay(100);
+    pinMode(RF_ANT_SELECT_PIN, OUTPUT);
+    digitalWrite(RF_ANT_SELECT_PIN, HIGH);
+    LOG("[Init] External u.fl antenna selected (GPIO3/14)\n");
+}
+
 Button btn1(PIN_BUTTON_1);
 Button btn2(PIN_BUTTON_2);
 
@@ -43,6 +56,10 @@ void setup() {
     btn2.begin();
 
     buttonMonitor.begin(PIN_BUTTON_1, PIN_BUTTON_2);
+
+#ifdef USE_EXTERNAL_ANTENNA
+    _initExternalAntenna();
+#endif
 
     if (!buttonMonitor.bootIntoOtaIfRequested()) {
         zigbeeInit();
